@@ -1,19 +1,17 @@
 const express = require('express');
 const router = express.Router();
+const courseController = require('../controllers/courseController');
 
-// Example routes
-router.get('/', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    data: { courses: [] }
-  });
-});
+// Course Routes
+router
+  .route('/')
+  .get(courseController.getAllCourses)
+  .post(courseController.createCourse);
 
-router.get('/:id', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    data: { course: { id: req.params.id } }
-  });
-});
+router
+  .route('/:id')
+  .get(courseController.getCourseById)
+  .put(courseController.updateCourse)
+  .delete(courseController.deleteCourse);
 
 module.exports = router;
