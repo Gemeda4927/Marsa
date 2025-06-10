@@ -1,0 +1,34 @@
+# 🚫 Ignore Node.js dependencies
+node_modules/
+
+# 🔒 Environment variables
+.env
+
+# 🗃️ Log files
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 📦 Build outputs (if using any)
+dist/
+build/
+
+# 💻 OS-generated files
+.DS_Store        # macOS
+Thumbs.db        # Windows
+
+# ⚙️ VS Code settings
+.vscode/
+
+# 🧪 Jest testing outputs
+coverage/
+
+# 📦 Package lock files (optional, if not locking dependencies)
+package-lock.json
+yarn.lock
+
+# 📦 Ignore dotenv backup if exists
+.env.local
+.env.*.local
