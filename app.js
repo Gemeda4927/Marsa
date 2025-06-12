@@ -9,8 +9,8 @@ const userRouter = require('./routes/userRoutes');
 const app = express();
 
 // Middleware
-app.use(express.json()); // Parse JSON bodies
-app.use(morgan('dev')); // HTTP request logging
+app.use(express.json()); 
+app.use(morgan('dev')); 
 
 // Mount Routes
 app.use('/api/v1/courses', courseRouter);

@@ -1,63 +1,92 @@
 const mongoose = require('mongoose');
 
-const chapterSchema = new mongoose.Schema({
-  title: { type: String, required: true, trim: true },
-  content: { type: String, trim: true }, // text, PDF link, or video URL
-  duration: { type: Number, default: 0 }, // minutes
+const courseSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, 'A course must have a title'],
+      trim: true,
+      maxlength: [100, 'Title must be less than 100 characters'],
+      minlength: [5, 'Title must be at least 5 characters']
+    },
+    description: {
+      type: String,
+      required: [true, 'A course must have a description'],
+      trim: true,
+      minlength: [20, 'Description must be at least 20 characters']
+    },
+    language: {
+      type: String,
+      enum: ['Afaan Oromoo', 'Amharic', 'English', 'Tigrigna', 'Somali'],
+      default: 'Afaan Oromoo',
+    },
+    level: {
+      type: String,
+      enum: ['Beginner', 'Intermediate', 'Advanced'],
+      default: 'Beginner',
+    },
+    instructor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: [true, 'Course must have an instructor'],
+    },
+    thumbnail: {
+      type: String,
+      validate: {
+        validator: function (v) {
+          return /^(https?:\/\/|data:image)/.test(v);
+        },
+        message: props => `${props.value} is not a valid image URL or base64 string!`
+      }
+    },
+    price: {
+      type: Number,
+      default: 0,
+      min: [0, 'Price cannot be negative']
+    },
+    duration: {
+      type: Number,
+      default: 0,
+      min: [0, 'Duration cannot be negative']
+    },
+    studentsEnrolled: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    }],
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
+);
+
+// Virtual property for enrollment count
+courseSchema.virtual('enrollmentCount').get(function () {
+  return this.studentsEnrolled?.length || 0;
 });
 
-const moduleSchema = new mongoose.Schema({
-  title: { type: String, required: true, trim: true },
-  description: { type: String, trim: true },
-  chapters: [chapterSchema],
+// Pre-save hook
+courseSchema.pre('save', function (next) {
+  if (this.isModified('price') && this.price < 0) {
+    throw new Error('Price cannot be negative');
+  }
+  console.log(`Saving course: ${this.title}`);
+  next();
 });
 
-const courseSchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: [true, 'A course must have a title'],
-    trim: true,
-    maxlength: [100, 'Title must be less than 100 characters'],
-  },
-  description: {
-    type: String,
-    required: [true, 'A course must have a description'],
-    trim: true,
-  },
-  category: {
-    type: String,
-    enum: ['ICT', 'Agriculture', 'Civics', 'Language','Technology', 'Science', 'Business', 'Gadaa System', 'Culture'],
-    default: 'ICT',
-  },
-
-
-  language: {
-    type: String,
-    enum: ['Afaan Oromoo', 'Amharic', 'English', 'Tigrigna', 'Somali'],
-    default: 'Afaan Oromoo',
-  },
-  region: {
-    type: String,
-    enum: ['Oromia', 'Amhara', 'Addis Ababa', 'Tigray', 'SNNPR', 'Gambella', 'Somali'],
-    default: 'Oromia',
-  },
-  level: {
-    type: String,
-    enum: ['Beginner', 'Intermediate', 'Advanced'],
-    default: 'Beginner',
-  },
-  instructor: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Course must have an instructor'],
-  },
-  thumbnail: { type: String }, // image URL or base64 string
-  price: { type: Number, default: 0 }, // free or paid
-  duration: { type: Number, default: 0 }, // total hours
-  modules: [moduleSchema],
-  studentsEnrolled: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  isPublished: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
-}, { timestamps: true });
+// Post-save hook
+courseSchema.post('save', function (doc, next) {
+  console.log(`Course ${doc.title} was saved successfully`);
+  next();
+});
 
 module.exports = mongoose.model('Course', courseSchema);
