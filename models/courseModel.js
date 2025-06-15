@@ -57,6 +57,11 @@ const courseSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'paid', 'refunded'],
+      default: 'unpaid',
+    },
     createdAt: {
       type: Date,
       default: Date.now,

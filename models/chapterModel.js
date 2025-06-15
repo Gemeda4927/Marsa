@@ -16,9 +16,18 @@ const chapterSchema = new mongoose.Schema(
       type: String,
       validate: {
         validator: function (v) {
-          return /^https?:\/\/.+\.(mp4|webm|mov|mkv)?$/.test(v);
+          return !v || /^https?:\/\/.+\.(mp4|webm|mov|mkv)(\?.*)?$/.test(v);
         },
         message: props => `${props.value} is not a valid video URL!`,
+      },
+    },
+    audioUrl: {
+      type: String,
+      validate: {
+        validator: function (v) {
+          return !v || /^https?:\/\/.+\.(mp3|wav|ogg|aac|m4a)(\?.*)?$/.test(v);
+        },
+        message: props => `${props.value} is not a valid audio URL!`,
       },
     },
     order: {
@@ -32,8 +41,19 @@ const chapterSchema = new mongoose.Schema(
     },
     resources: [
       {
-        name: String,
-        url: String,
+        name: {
+          type: String,
+          trim: true,
+        },
+        url: {
+          type: String,
+          validate: {
+            validator: function (v) {
+              return /^https?:\/\/.+/.test(v);
+            },
+            message: props => `${props.value} is not a valid URL!`,
+          },
+        },
       },
     ],
   },
@@ -44,7 +64,7 @@ const chapterSchema = new mongoose.Schema(
   }
 );
 
-// Query middleware to auto-populate course info (optional)
+// Auto-populate course info when finding chapters
 chapterSchema.pre(/^find/, function (next) {
   this.populate({
     path: 'course',

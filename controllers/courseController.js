@@ -3,6 +3,9 @@ const Course = require('../models/courseModel');
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
+// Allowed payment statuses
+const VALID_PAYMENT_STATUSES = ['unpaid', 'paid', 'refunded'];
+
 exports.getAllCourses = asyncHandler(async (req, res) => {
   const courses = await Course.find()
     .populate('instructor', 'name email')
@@ -34,7 +37,24 @@ exports.getCourseById = asyncHandler(async (req, res) => {
 });
 
 exports.createCourse = asyncHandler(async (req, res) => {
-  const { title, description, language, instructor, thumbnail, price, duration } = req.body;
+  const {
+    title,
+    description,
+    language,
+    instructor,
+    thumbnail,
+    price,
+    duration,
+    paymentStatus
+  } = req.body;
+
+  // Validate paymentStatus
+  if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Invalid payment status value'
+    });
+  }
 
   const newCourse = await Course.create({
     title,
@@ -43,7 +63,8 @@ exports.createCourse = asyncHandler(async (req, res) => {
     instructor,
     thumbnail,
     price: price || 0,
-    duration: duration || 0
+    duration: duration || 0,
+    paymentStatus: paymentStatus || 'unpaid'
   });
 
   res.status(201).json({
@@ -53,6 +74,17 @@ exports.createCourse = asyncHandler(async (req, res) => {
 });
 
 exports.updateCourse = asyncHandler(async (req, res) => {
+  // Validate paymentStatus if it's being updated
+  if (
+    req.body.paymentStatus &&
+    !VALID_PAYMENT_STATUSES.includes(req.body.paymentStatus)
+  ) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Invalid payment status value'
+    });
+  }
+
   const updatedCourse = await Course.findByIdAndUpdate(
     req.params.id,
     req.body,

@@ -1,5 +1,6 @@
 const express = require('express');
 const morgan = require('morgan');
+const cors = require('cors'); // <-- ✅ Add this line
 
 // Route Imports
 const courseRouter = require('./routes/courseRoutes');
@@ -9,6 +10,7 @@ const userRouter = require('./routes/userRoutes');
 const app = express();
 
 // Middleware
+app.use(cors()); 
 app.use(express.json()); 
 app.use(morgan('dev')); 
 
@@ -16,7 +18,7 @@ app.use(morgan('dev'));
 app.use('/api/v1/courses', courseRouter);
 app.use('/api/v1/users', userRouter);
 
-// // Handle Unmatched Routes
+// Optional: Handle unmatched routes
 // app.all('*', (req, res, next) => {
 //   const err = new Error(`Cannot find ${req.originalUrl} on this server!`);
 //   err.status = 'fail';
