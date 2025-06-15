@@ -1,6 +1,7 @@
 const express = require('express');
 const morgan = require('morgan');
-const cors = require('cors'); // <-- ✅ Add this line
+const cors = require('cors'); 
+const path = require('path');
 
 // Route Imports
 const courseRouter = require('./routes/courseRoutes');
@@ -17,6 +18,7 @@ app.use(morgan('dev'));
 // Mount Routes
 app.use('/api/v1/courses', courseRouter);
 app.use('/api/v1/users', userRouter);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Optional: Handle unmatched routes
 // app.all('*', (req, res, next) => {

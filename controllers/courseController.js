@@ -1,166 +1,188 @@
 const Course = require('../models/courseModel');
+const { buildFilter } = require('../utils/courseHelpers/helpers/filterHelper');
+const validatePaymentStatus = require('../utils/courseHelpers/validations/validatePaymentStatus');
+const { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } = require('../utils/courseHelpers/constants/index');
 
+// Wrap async functions for error handling middleware
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-// Allowed payment statuses
-const VALID_PAYMENT_STATUSES = ['unpaid', 'paid', 'refunded'];
-
-exports.getAllCourses = asyncHandler(async (req, res) => {
-  const courses = await Course.find()
-    .populate('instructor', 'name email')
-    .sort({ createdAt: -1 });
-
-  res.status(200).json({
-    status: 'success',
-    results: courses.length,
-    data: { courses }
-  });
-});
-
-exports.getCourseById = asyncHandler(async (req, res) => {
-  const course = await Course.findById(req.params.id)
-    .populate('instructor', 'name email')
-    .populate('studentsEnrolled', 'name email');
-
-  if (!course) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Course not found with that ID'
-    });
+// Builds a Mongoose query based on request parameters
+const buildQuery = (req) => {
+  if (req.query.mostPurchased || req.query.popular) {
+    req.query.sort = '-studentsEnrolled';
+    req.query.limit = req.query.limit || '10';
   }
 
-  res.status(200).json({
-    status: 'success',
-    data: { course }
-  });
-});
+  const filter = buildFilter(req.query);
 
-exports.createCourse = asyncHandler(async (req, res) => {
-  const {
-    title,
-    description,
-    language,
-    instructor,
-    thumbnail,
-    price,
-    duration,
-    paymentStatus
-  } = req.body;
-
-  // Validate paymentStatus
-  if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Invalid payment status value'
-    });
+  if (req.query.search) {
+    filter.$or = [
+      { title: { $regex: req.query.search, $options: 'i' } },
+      { description: { $regex: req.query.search, $options: 'i' } },
+    ];
   }
 
-  const newCourse = await Course.create({
-    title,
-    description,
-    language,
-    instructor,
-    thumbnail,
-    price: price || 0,
-    duration: duration || 0,
-    paymentStatus: paymentStatus || 'unpaid'
-  });
+  let query = Course.find(filter).populate('instructor', 'name email');
 
-  res.status(201).json({
-    status: 'success',
-    data: { course: newCourse }
-  });
-});
-
-exports.updateCourse = asyncHandler(async (req, res) => {
-  // Validate paymentStatus if it's being updated
-  if (
-    req.body.paymentStatus &&
-    !VALID_PAYMENT_STATUSES.includes(req.body.paymentStatus)
-  ) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Invalid payment status value'
-    });
+  if (req.query.sort) {
+    const sortBy = req.query.sort.split(',').join(' ');
+    query = query.sort(sortBy);
+  } else {
+    query = query.sort('-createdAt');
   }
 
-  const updatedCourse = await Course.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    {
-      new: true,
-      runValidators: true
+  if (req.query.fields) {
+    const fields = req.query.fields.split(',').join(' ');
+    query = query.select(fields);
+  }
+
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  let limit = parseInt(req.query.limit, 10) || DEFAULT_PAGE_SIZE;
+  limit = Math.min(limit, MAX_PAGE_SIZE);
+  const skip = (page - 1) * limit;
+
+  query = query.skip(skip).limit(limit);
+
+  return query;
+};
+
+const courseController = {
+  getAllCourses: asyncHandler(async (req, res) => {
+    const query = buildQuery(req);
+    const courses = await query;
+
+    res.status(200).json({
+      status: 'success',
+      results: courses.length,
+      page: parseInt(req.query.page, 10) || 1,
+      data: { courses },
+    });
+  }),
+
+  getCourseById: asyncHandler(async (req, res) => {
+    const course = await Course.findById(req.params.id)
+      .populate('instructor', 'name email')
+      .populate('studentsEnrolled', 'name email');
+
+    if (!course) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Course not found with that ID',
+      });
     }
-  );
 
-  if (!updatedCourse) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Course not found with that ID'
+    res.status(200).json({
+      status: 'success',
+      data: { course },
     });
-  }
+  }),
 
-  res.status(200).json({
-    status: 'success',
-    data: { course: updatedCourse }
-  });
-});
+  createCourse: asyncHandler(async (req, res) => {
+    const { paymentStatus, ...courseData } = req.body;
 
-exports.deleteCourse = asyncHandler(async (req, res) => {
-  const deletedCourse = await Course.findByIdAndDelete(req.params.id);
+    validatePaymentStatus(paymentStatus);
 
-  if (!deletedCourse) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Course not found with that ID'
+    // Build full URL for thumbnail if file uploaded
+    const thumbnailPath = req.file
+      ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
+      : null;
+
+    const newCourse = await Course.create({
+      ...courseData,
+      price: courseData.price || 0,
+      duration: courseData.duration || 0,
+      paymentStatus: paymentStatus || 'unpaid',
+      thumbnail: thumbnailPath,
     });
-  }
 
-  res.status(204).json({
-    status: 'success',
-    data: null
-  });
-});
-
-exports.activateCourse = asyncHandler(async (req, res) => {
-  const course = await Course.findByIdAndUpdate(
-    req.params.id,
-    { isPublished: true },
-    { new: true, runValidators: true }
-  );
-
-  if (!course) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Course not found with that ID'
+    res.status(201).json({
+      status: 'success',
+      data: { course: newCourse },
     });
-  }
+  }),
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Course published successfully',
-    data: { course }
-  });
-});
+  updateCourse: asyncHandler(async (req, res) => {
+    if (req.body.paymentStatus) {
+      validatePaymentStatus(req.body.paymentStatus);
+    }
 
-exports.deactivateCourse = asyncHandler(async (req, res) => {
-  const course = await Course.findByIdAndUpdate(
-    req.params.id,
-    { isPublished: false },
-    { new: true, runValidators: true }
-  );
+    const updatedCourse = await Course.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
 
-  if (!course) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Course not found with that ID'
+    if (!updatedCourse) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Course not found with that ID',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: { course: updatedCourse },
     });
-  }
+  }),
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Course unpublished successfully',
-    data: { course }
-  });
-});
+  deleteCourse: asyncHandler(async (req, res) => {
+    const deletedCourse = await Course.findByIdAndDelete(req.params.id);
+
+    if (!deletedCourse) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Course not found with that ID',
+      });
+    }
+
+    res.status(204).json({
+      status: 'success',
+      data: null,
+    });
+  }),
+
+  activateCourse: asyncHandler(async (req, res) => {
+    const course = await Course.findByIdAndUpdate(
+      req.params.id,
+      { isPublished: true },
+      { new: true, runValidators: true }
+    );
+
+    if (!course) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Course not found with that ID',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Course published successfully',
+      data: { course },
+    });
+  }),
+
+  deactivateCourse: asyncHandler(async (req, res) => {
+    const course = await Course.findByIdAndUpdate(
+      req.params.id,
+      { isPublished: false },
+      { new: true, runValidators: true }
+    );
+
+    if (!course) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Course not found with that ID',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Course unpublished successfully',
+      data: { course },
+    });
+  }),
+};
+
+module.exports = courseController;
