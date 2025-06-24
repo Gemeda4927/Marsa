@@ -3,81 +3,133 @@ const morgan = require('morgan');
 const cors = require('cors');
 const path = require('path');
 const swaggerUi = require('swagger-ui-express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
 const swaggerSpec = require('./config/swagger');
 
-// ===== Import Mongoose models to register schemas =====
-require('./models/courseModel');
-require('./models/chapterModel');
-require('./models/userModel');
-require('./models/noteModel');
-require('./models/worksheetModel');
-require('./models/exerciseModel');
-require('./models/quizModel');
-require('./models/assignmentModel');
-require('./models/codeTaskModel');
-require('./models/summaryModel');
-require('./models/learningOutcomeModel');
-require('./models/previousExamModel');
-require('./models/discussionModel');
-require('./models/resourceLinkModel');
-require('./models/completionStatusModel');
-require('./models/liveSessionModel');
-require('./models/projectTaskModel');
+// ===== Load Environment Variables =====
+require('dotenv').config();
 
-// ========== Route Imports ==========
-const courseRouter = require('./routes/courseRoutes');
-const userRouter = require('./routes/userRoutes');
-const chaptersRouter = require('./routes/chapterRoutes');
-const noteRoutes = require('./routes/noteRoutes');
-const worksheetRoutes = require('./routes/worksheetRoutes');
-const exerciseRoutes = require('./routes/exerciseRoutes');
-const quizRoutes = require('./routes/quizRoutes');
-const assignmentRoutes = require('./routes/assignmentRoutes');
-const codeTaskRoutes = require('./routes/codeTaskRoutes');
-const summaryRoutes = require('./routes/summaryRoutes');
-const learningOutcomeRoutes = require('./routes/learningOutcomeRoutes');
-const previousExamRoutes = require('./routes/previousExamRoutes');
-const discussionRoutes = require('./routes/discussionRoutes');
-const resourceLinkRoutes = require('./routes/resourceLinkRoutes');
-const completionStatusRoutes = require('./routes/completionStatusRoutes');
-const liveSessionRoutes = require('./routes/liveSessionRoutes');
-const projectTaskRoutes = require('./routes/projectTaskRoutes');
+// ===== Database Connection =====
+// require('./config/database');
 
-// ========== Create Express App ==========
+// ===== Import Mongoose Models =====
+const models = [
+  './models/courseModel',
+  './models/chapterModel',
+  './models/userModel',
+  './models/noteModel',
+  './models/worksheetModel',
+  './models/exerciseModel',
+  './models/quizModel',
+  './models/assignmentModel',
+  './models/codeTaskModel',
+  './models/summaryModel',
+  './models/learningOutcomeModel',
+  './models/previousExamModel',
+  './models/discussionModel',
+  './models/resourceLinkModel',
+  './models/completionStatusModel',
+  './models/liveSessionModel',
+  './models/projectTaskModel'
+];
+
+models.forEach(model => require(model));
+
+// ===== Route Imports =====
+const routes = [
+  { path: '/api/v1/courses', router: require('./routes/courseRoutes') },
+  { path: '/api/v1/users', router: require('./routes/userRoutes') },
+  { path: '/api/v1/courses/:courseId/chapters', router: require('./routes/chapterRoutes') },
+  { path: '/api/v1/notes', router: require('./routes/noteRoutes') },
+  { path: '/api/v1/worksheets', router: require('./routes/worksheetRoutes') },
+  { path: '/api/v1/exercises', router: require('./routes/exerciseRoutes') },
+  { path: '/api/v1/quizzes', router: require('./routes/quizRoutes') },
+  { path: '/api/v1/assignments', router: require('./routes/assignmentRoutes') },
+  { path: '/api/v1/code-tasks', router: require('./routes/codeTaskRoutes') },
+  { path: '/api/v1/summaries', router: require('./routes/summaryRoutes') },
+  { path: '/api/v1/learning-outcomes', router: require('./routes/learningOutcomeRoutes') },
+  { path: '/api/v1/previous-exams', router: require('./routes/previousExamRoutes') },
+  { path: '/api/v1/discussions', router: require('./routes/discussionRoutes') },
+  { path: '/api/v1/resource-links', router: require('./routes/resourceLinkRoutes') },
+  { path: '/api/v1/completion-statuses', router: require('./routes/completionStatusRoutes') },
+  { path: '/api/v1/live-sessions', router: require('./routes/liveSessionRoutes') },
+  { path: '/api/v1/project-tasks', router: require('./routes/projectTaskRoutes') }
+];
+
+// ===== Create Express App =====
 const app = express();
 
-// ========== Middleware ==========
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// ===== Security Middleware =====
+app.use(helmet());
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 
-// ========== Serve Static Files ==========
+// ===== Rate Limiting =====
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later'
+});
+app.use('/api', limiter);
+
+// ===== Development Logging =====
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
+
+// ===== Body Parsers =====
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// ===== CORS Configuration =====
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+app.use(cors(corsOptions));
+
+// ===== Static Files =====
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ========== Swagger UI ==========
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// ===== Swagger Documentation =====
+app.use('/api-docs', 
+  swaggerUi.serve, 
+  swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customSiteTitle: 'Learning Platform API Docs'
+  })
+);
 
-// ========== API Routes ==========
-app.use('/api/v1/courses', courseRouter);
-app.use('/api/v1/users', userRouter);
-app.use('/api/v1/courses/:courseId/chapters', chaptersRouter);
-app.use('/api/v1/notes', noteRoutes);
-app.use('/api/v1/worksheets', worksheetRoutes);
-app.use('/api/v1/exercises', exerciseRoutes);
-app.use('/api/v1/quizzes', quizRoutes);
-app.use('/api/v1/assignments', assignmentRoutes);
-app.use('/api/v1/code-tasks', codeTaskRoutes);
-app.use('/api/v1/summaries', summaryRoutes);
-app.use('/api/v1/learning-outcomes', learningOutcomeRoutes);
-app.use('/api/v1/previous-exams', previousExamRoutes);
-app.use('/api/v1/discussions', discussionRoutes);
-app.use('/api/v1/resource-links', resourceLinkRoutes);
-app.use('/api/v1/completion-statuses', completionStatusRoutes);
-app.use('/api/v1/live-sessions', liveSessionRoutes);
-app.use('/api/v1/project-tasks', projectTaskRoutes);
+// ===== API Routes =====
+routes.forEach(route => {
+  app.use(route.path, route.router);
+});
 
-// ========== Global Error Handler ==========
+// ===== Health Check Endpoint =====
+app.get('/api/v1/health', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'API is running',
+    timestamp: new Date()
+  });
+});
+
+// // ===== 404 Handler =====
+// app.all('*', (req, res, next) => {
+//   const err = new Error(`Can't find ${req.originalUrl} on this server!`);
+//   err.statusCode = 404;
+//   err.status = 'fail';
+//   next(err);
+// });
+
+// ===== Global Error Handler =====
 app.use((err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
@@ -88,13 +140,30 @@ app.use((err, req, res, next) => {
       status: err.status,
       message: err.message,
       error: err,
-      stack: err.stack,
+      stack: err.stack
     });
   }
 
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      status: 'fail',
+      message: 'Validation Error',
+      errors: Object.values(err.errors).map(el => el.message)
+    });
+  }
+
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      status: 'fail',
+      message: `Invalid ${err.path}: ${err.value}`
+    });
+  }
+
+  // Production error response
   res.status(err.statusCode).json({
     status: err.status,
-    message: err.message,
+    message: err.message
   });
 });
 
