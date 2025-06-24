@@ -5,6 +5,25 @@ const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
+// ===== Import Mongoose models to register schemas =====
+require('./models/courseModel');
+require('./models/chapterModel');
+require('./models/userModel');
+require('./models/noteModel');
+require('./models/worksheetModel');
+require('./models/exerciseModel');
+require('./models/quizModel');
+require('./models/assignmentModel');
+require('./models/codeTaskModel');
+require('./models/summaryModel');
+require('./models/learningOutcomeModel');
+require('./models/previousExamModel');
+require('./models/discussionModel');
+require('./models/resourceLinkModel');
+require('./models/completionStatusModel');
+require('./models/liveSessionModel');
+require('./models/projectTaskModel');
+
 // ========== Route Imports ==========
 const courseRouter = require('./routes/courseRoutes');
 const userRouter = require('./routes/userRoutes');
@@ -28,10 +47,10 @@ const projectTaskRoutes = require('./routes/projectTaskRoutes');
 const app = express();
 
 // ========== Middleware ==========
-app.use(cors()); // Enable CORS for all routes
-app.use(express.json()); // Parse JSON request bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded request bodies
-app.use(morgan('dev')); // Logging HTTP requests
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('dev'));
 
 // ========== Serve Static Files ==========
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -58,14 +77,6 @@ app.use('/api/v1/completion-statuses', completionStatusRoutes);
 app.use('/api/v1/live-sessions', liveSessionRoutes);
 app.use('/api/v1/project-tasks', projectTaskRoutes);
 
-// ========== Handle Unknown Routes ==========
-// app.all('*', (req, res, next) => {
-//   res.status(404).json({
-//     status: 'fail',
-//     message: `Can't find ${req.originalUrl} on this server!`
-//   });
-// });
-
 // ========== Global Error Handler ==========
 app.use((err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
@@ -81,7 +92,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // In production, do not expose stack traces
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
