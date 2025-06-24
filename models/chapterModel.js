@@ -1,270 +1,80 @@
-const Chapter = require('../models/chapterModel');
-const Worksheet = require('../models/worksheetModel');
-const Exercise = require('../models/exerciseModel');
-const Assignment = require('../models/assignmentModel');
-const CodeTask = require('../models/codeTaskModel');
-const ProjectTask = require('../models/projectTaskModel');
-const Quiz = require('../models/quizModel');
-const PreviousExam = require('../models/previousExamModel');
+const mongoose = require('mongoose');
 
-const asyncHandler = fn => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-
-// ----------- Chapter CRUD with video/audio upload ------------
-
-// Create Chapter with optional video and audio upload
-exports.createChapter = asyncHandler(async (req, res) => {
-  const data = req.body;
-
-  // Attach videoUrl if video uploaded (e.g. multer + Cloudinary)
-  if (req.file) {
-    data.videoUrl = req.file.path;
-  }
-
-  // Validate course presence because model requires it
-  if (!data.course) {
-    return res.status(400).json({
-      status: 'fail',
-      message: 'Course is required for chapter',
-    });
-  }
-
-  // Create chapter document
-  const chapter = await Chapter.create(data);
-
-  res.status(201).json({
-    status: 'success',
-    data: chapter,
-  });
-});
-
-// Get Chapter by ID
-exports.getChapterById = asyncHandler(async (req, res) => {
-  const chapter = await Chapter.findById(req.params.id);
-
-  if (!chapter) {
-    return res.status(404).json({ status: 'fail', message: 'Chapter not found' });
-  }
-
-  res.status(200).json({ status: 'success', data: chapter });
-});
-
-// Update Chapter with optional video/audio upload
-exports.updateChapter = asyncHandler(async (req, res) => {
-  const data = req.body;
-
-  if (req.file) {
-    data.videoUrl = req.file.path;
-  }
-
-  const updated = await Chapter.findByIdAndUpdate(req.params.id, data, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!updated) {
-    return res.status(404).json({ status: 'fail', message: 'Chapter not found' });
-  }
-
-  res.status(200).json({ status: 'success', data: updated });
-});
-
-// Delete Chapter
-exports.deleteChapter = asyncHandler(async (req, res) => {
-  const deleted = await Chapter.findByIdAndDelete(req.params.id);
-
-  if (!deleted) {
-    return res.status(404).json({ status: 'fail', message: 'Chapter not found' });
-  }
-
-  res.status(204).json({ status: 'success', data: null });
-});
-
-// -------------------------------------------------------
-
-// Get all contents by chapterId
-exports.getAllContentsByChapter = asyncHandler(async (req, res) => {
-  const chapterId = req.params.chapterId;
-
-  const [worksheets, exercises, assignments, codeTasks, projectTasks, quizzes, previousExams] = await Promise.all([
-    Worksheet.find({ chapter: chapterId }),
-    Exercise.find({ chapter: chapterId }),
-    Assignment.find({ chapter: chapterId }),
-    CodeTask.find({ chapter: chapterId }),
-    ProjectTask.find({ chapter: chapterId }),
-    Quiz.find({ chapter: chapterId }),
-    PreviousExam.find({ chapter: chapterId }),
-  ]);
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      worksheets,
-      exercises,
-      assignments,
-      codeTasks,
-      projectTasks,
-      quizzes,
-      previousExams,
+const chapterSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, 'A chapter must have a title'],
+      trim: true,
+      maxlength: [100, 'Title cannot exceed 100 characters'],
+      minlength: [5, 'Title must be at least 5 characters'],
     },
+    content: {
+      type: String,
+      required: [true, 'A chapter must have content'],
+      minlength: [10, 'Content must be at least 10 characters'],
+    },
+    course: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Course',
+      required: [true, 'Chapter must belong to a course'],
+    },
+    order: {
+      type: Number,
+      default: 1,
+      min: [1, 'Order must be at least 1'],
+    },
+    video: {
+      type: String,
+      validate: {
+        validator: (v) => !v || /^(https?:\/\/|data:video)/.test(v),
+        message: (props) => `${props.value} is not a valid video URL!`,
+      },
+    },
+    audio: {
+      type: String,
+      validate: {
+        validator: (v) => !v || /^(https?:\/\/|data:audio)/.test(v),
+        message: (props) => `${props.value} is not a valid audio URL!`,
+      },
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
+
+// Indexes for performance optimization
+chapterSchema.index({ course: 1, order: 1 }); 
+chapterSchema.index({ title: 'text' });       
+
+// Virtual populates for related documents
+const virtualRelationships = [
+  'Note',
+  'Worksheet',
+  'Exercise',
+  'Quiz',
+  'Assignment',
+  'CodeTask',
+  'Summary',
+  'LearningOutcome',
+  'PreviousExam',
+  'Discussion',
+  'ResourceLink',
+  'CompletionStatus',
+  'LiveSession',
+  'ProjectTask',
+];
+
+virtualRelationships.forEach((model) => {
+  chapterSchema.virtual(model.toLowerCase(), {
+    ref: model,
+    foreignField: 'chapter',
+    localField: '_id',
+    justOne: false,
   });
 });
 
-// Create a new content item of a specific type for a chapter
-exports.createContent = asyncHandler(async (req, res) => {
-  const { chapterId, type } = req.params;
-  const data = req.body;
-
-  data.chapter = chapterId;
-
-  let Model;
-  switch (type.toLowerCase()) {
-    case 'worksheet':
-      Model = Worksheet;
-      break;
-    case 'exercise':
-      Model = Exercise;
-      break;
-    case 'assignment':
-      Model = Assignment;
-      break;
-    case 'codetask':
-      Model = CodeTask;
-      break;
-    case 'projecttask':
-      Model = ProjectTask;
-      break;
-    case 'quiz':
-      Model = Quiz;
-      break;
-    case 'previousexam':
-      Model = PreviousExam;
-      break;
-    default:
-      return res.status(400).json({ status: 'fail', message: 'Invalid content type' });
-  }
-
-  const newItem = await Model.create(data);
-
-  res.status(201).json({ status: 'success', data: newItem });
-});
-
-// Get content item by id and type
-exports.getContentById = asyncHandler(async (req, res) => {
-  const { id, type } = req.params;
-
-  let Model;
-  switch (type.toLowerCase()) {
-    case 'worksheet':
-      Model = Worksheet;
-      break;
-    case 'exercise':
-      Model = Exercise;
-      break;
-    case 'assignment':
-      Model = Assignment;
-      break;
-    case 'codetask':
-      Model = CodeTask;
-      break;
-    case 'projecttask':
-      Model = ProjectTask;
-      break;
-    case 'quiz':
-      Model = Quiz;
-      break;
-    case 'previousexam':
-      Model = PreviousExam;
-      break;
-    default:
-      return res.status(400).json({ status: 'fail', message: 'Invalid content type' });
-  }
-
-  const item = await Model.findById(id);
-  if (!item) {
-    return res.status(404).json({ status: 'fail', message: `${type} not found` });
-  }
-
-  res.status(200).json({ status: 'success', data: item });
-});
-
-// Update content item by id and type
-exports.updateContent = asyncHandler(async (req, res) => {
-  const { id, type } = req.params;
-
-  let Model;
-  switch (type.toLowerCase()) {
-    case 'worksheet':
-      Model = Worksheet;
-      break;
-    case 'exercise':
-      Model = Exercise;
-      break;
-    case 'assignment':
-      Model = Assignment;
-      break;
-    case 'codetask':
-      Model = CodeTask;
-      break;
-    case 'projecttask':
-      Model = ProjectTask;
-      break;
-    case 'quiz':
-      Model = Quiz;
-      break;
-    case 'previousexam':
-      Model = PreviousExam;
-      break;
-    default:
-      return res.status(400).json({ status: 'fail', message: 'Invalid content type' });
-  }
-
-  const updated = await Model.findByIdAndUpdate(id, req.body, { new: true, runValidators: true });
-
-  if (!updated) {
-    return res.status(404).json({ status: 'fail', message: `${type} not found` });
-  }
-
-  res.status(200).json({ status: 'success', data: updated });
-});
-
-// Delete content item by id and type
-exports.deleteContent = asyncHandler(async (req, res) => {
-  const { id, type } = req.params;
-
-  let Model;
-  switch (type.toLowerCase()) {
-    case 'worksheet':
-      Model = Worksheet;
-      break;
-    case 'exercise':
-      Model = Exercise;
-      break;
-    case 'assignment':
-      Model = Assignment;
-      break;
-    case 'codetask':
-      Model = CodeTask;
-      break;
-    case 'projecttask':
-      Model = ProjectTask;
-      break;
-    case 'quiz':
-      Model = Quiz;
-      break;
-    case 'previousexam':
-      Model = PreviousExam;
-      break;
-    default:
-      return res.status(400).json({ status: 'fail', message: 'Invalid content type' });
-  }
-
-  const deleted = await Model.findByIdAndDelete(id);
-
-  if (!deleted) {
-    return res.status(404).json({ status: 'fail', message: `${type} not found` });
-  }
-
-  res.status(204).json({ status: 'success', data: null });
-});
+module.exports = mongoose.model('Chapter', chapterSchema);

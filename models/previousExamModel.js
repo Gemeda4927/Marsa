@@ -1,27 +1,30 @@
-// models/previousExamModel.js
 const mongoose = require('mongoose');
 
-const questionSchema = new mongoose.Schema({
-  questionText: { type: String, required: true },
-  answer: { type: String },
-  type: {
-    type: String,
-    enum: ['MCQ', 'Short Answer', 'Essay', 'True/False'],
-    default: 'Short Answer'
+const previousExamSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, 'Previous exam must have a title'],
+      trim: true
+    },
+    description: {
+      type: String,
+      required: [true, 'Previous exam must have a description'],
+      minlength: [10, 'Description must be at least 10 characters']
+    },
+    fileUrl: {
+      type: String,
+      required: [true, 'Please provide a file URL for the exam']
+    },
+    chapter: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Chapter',
+      required: [true, 'Previous exam must be linked to a chapter']
+    }
   },
-  options: [String] // Only used if type is MCQ
-});
-
-const previousExamSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  year: { type: Number, required: true },
-  institution: { type: String },
-  questions: [questionSchema],
-  chapter: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Chapter',
-    required: true
+  {
+    timestamps: true
   }
-}, { timestamps: true });
+);
 
 module.exports = mongoose.model('PreviousExam', previousExamSchema);

@@ -1,93 +1,256 @@
 const Chapter = require('../models/chapterModel');
-const Course = require('../models/courseModel');
+const cloudinary = require('../config/cloudinary');
 
-// Async error handler wrapper
-const asyncHandler = fn => (req, res, next) =>
-  Promise.resolve(fn(req, res, next)).catch(next);
+// ==================== Helper Functions ====================
+const uploadToCloudinary = async (fileBuffer, mimetype, folder) => {
+  try {
+    if (!fileBuffer || !mimetype || !folder) {
+      throw new Error('Missing required parameters for upload');
+    }
 
-// GET all chapters (optionally filter by courseId)
-exports.getAllChapters = asyncHandler(async (req, res) => {
-  const filter = req.params.courseId ? { course: req.params.courseId } : {};
-  const chapters = await Chapter.find(filter).sort({ order: 1 });
+    const base64 = fileBuffer.toString('base64');
+    const dataUri = `data:${mimetype};base64,${base64}`;
+    const resourceType = mimetype.startsWith('video')
+      ? 'video'
+      : mimetype.startsWith('audio')
+      ? 'audio'
+      : 'image';
 
-  res.status(200).json({
-    status: 'success',
-    results: chapters.length,
-    data: { chapters }
-  });
-});
+    const result = await cloudinary.uploader.upload(dataUri, {
+      folder: `edu-platform/${folder}`,
+      resource_type: resourceType,
+      timeout: 30000,
+      chunk_size: 6000000,
+    });
 
-// GET a single chapter by ID
-exports.getChapterById = asyncHandler(async (req, res) => {
-  const chapter = await Chapter.findById(req.params.id);
+    return result;
+  } catch (err) {
+    console.error('Cloudinary Upload Error:', {
+      error: err.message,
+      type: mimetype,
+      size: fileBuffer?.length,
+    });
+    throw err;
+  }
+};
 
-  if (!chapter) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Chapter not found with that ID',
+// ==================== Controller Methods ====================
+
+// Create Chapter
+exports.createChapter = async (req, res) => {
+  try {
+    const { title, content, course, order } = req.body;
+
+    if (!title || !content || !course) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide title, content, and course reference',
+      });
+    }
+
+    let media = {};
+    const uploadPromises = [];
+
+    if (req.files?.video?.[0]) {
+      uploadPromises.push(
+        uploadToCloudinary(
+          req.files.video[0].buffer,
+          req.files.video[0].mimetype,
+          'chapters/videos'
+        ).then((result) => {
+          media.video = result.secure_url;
+        })
+      );
+    }
+
+    if (req.files?.audio?.[0]) {
+      uploadPromises.push(
+        uploadToCloudinary(
+          req.files.audio[0].buffer,
+          req.files.audio[0].mimetype,
+          'chapters/audios'
+        ).then((result) => {
+          media.audio = result.secure_url;
+        })
+      );
+    }
+
+    await Promise.all(uploadPromises);
+
+    const chapter = await Chapter.create({
+      title,
+      content,
+      course,
+      order,
+      ...media,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Chapter created successfully',
+      data: chapter,
+    });
+  } catch (err) {
+    console.error('Create Chapter Error:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Could not create chapter',
     });
   }
+};
 
-  res.status(200).json({
-    status: 'success',
-    data: { chapter }
-  });
-});
+// Get All Chapters
+exports.getChapters = async (req, res) => {
+  try {
+    const chapters = await Chapter.find()
+      .populate('note')
+      .populate('worksheet')
+      .populate('exercise')
+      .populate('quiz')
+      .populate('assignment')
+      .populate('codetask')
+      .populate('summary')
+      .populate('learningoutcome')
+      .populate('previousexam')
+      .populate('discussion')
+      .populate('resourcelink')
+      .populate('completionstatus')
+      .populate('livesession')
+      .populate('projecttask');
 
-// CREATE a chapter (requires courseId in body or route param)
-exports.createChapter = asyncHandler(async (req, res) => {
-  const courseId = req.body.course || req.params.courseId;
-
-  const course = await Course.findById(courseId);
-  if (!course) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'No course found with the provided course ID',
+    return res.status(200).json({
+      success: true,
+      results: chapters.length,
+      data: chapters,
+    });
+  } catch (err) {
+    console.error('Get Chapters Error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not fetch chapters',
     });
   }
+};
 
-  const chapter = await Chapter.create({ ...req.body, course: courseId });
+// Get Single Chapter
+exports.getChapter = async (req, res) => {
+  try {
+    const chapter = await Chapter.findById(req.params.id)
+      .populate('note')
+      .populate('worksheet')
+      .populate('exercise')
+      .populate('quiz')
+      .populate('assignment')
+      .populate('codetask')
+      .populate('summary')
+      .populate('learningoutcome')
+      .populate('previousexam')
+      .populate('discussion')
+      .populate('resourcelink')
+      .populate('completionstatus')
+      .populate('livesession')
+      .populate('projecttask');
 
-  res.status(201).json({
-    status: 'success',
-    data: { chapter }
-  });
-});
+    if (!chapter) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chapter not found',
+      });
+    }
 
-// UPDATE a chapter
-exports.updateChapter = asyncHandler(async (req, res) => {
-  const chapter = await Chapter.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    { new: true, runValidators: true }
-  );
-
-  if (!chapter) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Chapter not found with that ID',
+    return res.status(200).json({
+      success: true,
+      data: chapter,
+    });
+  } catch (err) {
+    console.error('Get Chapter Error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not fetch chapter',
     });
   }
+};
 
-  res.status(200).json({
-    status: 'success',
-    data: { chapter }
-  });
-});
+// Update Chapter
+exports.updateChapter = async (req, res) => {
+  try {
+    const updateData = { ...req.body };
+    const uploadPromises = [];
 
-// DELETE a chapter
-exports.deleteChapter = asyncHandler(async (req, res) => {
-  const chapter = await Chapter.findByIdAndDelete(req.params.id);
+    if (req.files?.video?.[0]) {
+      uploadPromises.push(
+        uploadToCloudinary(
+          req.files.video[0].buffer,
+          req.files.video[0].mimetype,
+          'chapters/videos'
+        ).then((result) => {
+          updateData.video = result.secure_url;
+        })
+      );
+    }
 
-  if (!chapter) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Chapter not found with that ID',
+    if (req.files?.audio?.[0]) {
+      uploadPromises.push(
+        uploadToCloudinary(
+          req.files.audio[0].buffer,
+          req.files.audio[0].mimetype,
+          'chapters/audios'
+        ).then((result) => {
+          updateData.audio = result.secure_url;
+        })
+      );
+    }
+
+    await Promise.all(uploadPromises);
+
+    const chapter = await Chapter.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate('course');
+
+    if (!chapter) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chapter not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Chapter updated successfully',
+      data: chapter,
+    });
+  } catch (err) {
+    console.error('Update Chapter Error:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Could not update chapter',
     });
   }
+};
 
-  res.status(204).json({
-    status: 'success',
-    data: null
-  });
-});
+// Delete Chapter
+exports.deleteChapter = async (req, res) => {
+  try {
+    const chapter = await Chapter.findByIdAndDelete(req.params.id);
+
+    if (!chapter) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chapter not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Chapter deleted successfully',
+      data: null,
+    });
+  } catch (err) {
+    console.error('Delete Chapter Error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not delete chapter',
+    });
+  }
+};
