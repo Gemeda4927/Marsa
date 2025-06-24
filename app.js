@@ -3,7 +3,7 @@ const morgan = require('morgan');
 const cors = require('cors');
 const path = require('path');
 const swaggerUi = require('swagger-ui-express');
-const swaggerSpec = require('./config/swagger'); 
+const swaggerSpec = require('./config/swagger');
 
 // ========== Route Imports ==========
 const courseRouter = require('./routes/courseRoutes');
@@ -24,22 +24,22 @@ const completionStatusRoutes = require('./routes/completionStatusRoutes');
 const liveSessionRoutes = require('./routes/liveSessionRoutes');
 const projectTaskRoutes = require('./routes/projectTaskRoutes');
 
-// ========== Create App ==========
+// ========== Create Express App ==========
 const app = express();
 
-// ========== 1. Middleware ==========
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// ========== Middleware ==========
+app.use(cors()); // Enable CORS for all routes
+app.use(express.json()); // Parse JSON request bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded request bodies
+app.use(morgan('dev')); // Logging HTTP requests
 
-// ========== 2. Static Files ==========
+// ========== Serve Static Files ==========
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ========== 3. Swagger UI ==========
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec)); 
+// ========== Swagger UI ==========
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ========== 4. API Routes ==========
+// ========== API Routes ==========
 app.use('/api/v1/courses', courseRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/courses/:courseId/chapters', chaptersRouter);
@@ -58,25 +58,34 @@ app.use('/api/v1/completion-statuses', completionStatusRoutes);
 app.use('/api/v1/live-sessions', liveSessionRoutes);
 app.use('/api/v1/project-tasks', projectTaskRoutes);
 
-// ========== 5. Global Error Handler ==========
+// ========== Handle Unknown Routes ==========
+// app.all('*', (req, res, next) => {
+//   res.status(404).json({
+//     status: 'fail',
+//     message: `Can't find ${req.originalUrl} on this server!`
+//   });
+// });
+
+// ========== Global Error Handler ==========
 app.use((err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
   if (process.env.NODE_ENV === 'development') {
     console.error('Error Stack:', err.stack);
-    res.status(err.statusCode).json({
+    return res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
       error: err,
       stack: err.stack,
     });
-  } else {
-    res.status(err.statusCode).json({
-      status: err.status,
-      message: err.message,
-    });
   }
+
+  // In production, do not expose stack traces
+  res.status(err.statusCode).json({
+    status: err.status,
+    message: err.message,
+  });
 });
 
 module.exports = app;
