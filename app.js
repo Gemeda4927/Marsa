@@ -2,12 +2,9 @@ const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
 const path = require('path');
-const swaggerUi = require('swagger-ui-express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
-const hpp = require('hpp');
+const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
 // ===== Load Environment Variables =====
@@ -36,7 +33,6 @@ const models = [
   './models/liveSessionModel',
   './models/projectTaskModel'
 ];
-
 models.forEach(model => require(model));
 
 // ===== Route Imports =====
@@ -65,14 +61,11 @@ const app = express();
 
 // ===== Security Middleware =====
 app.use(helmet());
-app.use(mongoSanitize());
-app.use(xss());
-app.use(hpp());
 
 // ===== Rate Limiting =====
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later'
 });
 app.use('/api', limiter);
@@ -99,8 +92,8 @@ app.use(cors(corsOptions));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ===== Swagger Documentation =====
-app.use('/api-docs', 
-  swaggerUi.serve, 
+app.use('/api-docs',
+  swaggerUi.serve,
   swaggerUi.setup(swaggerSpec, {
     explorer: true,
     customSiteTitle: 'Learning Platform API Docs'
@@ -121,14 +114,6 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
-// // ===== 404 Handler =====
-// app.all('*', (req, res, next) => {
-//   const err = new Error(`Can't find ${req.originalUrl} on this server!`);
-//   err.statusCode = 404;
-//   err.status = 'fail';
-//   next(err);
-// });
-
 // ===== Global Error Handler =====
 app.use((err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
@@ -144,7 +129,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Handle specific error types
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       status: 'fail',
@@ -160,7 +144,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Production error response
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message
