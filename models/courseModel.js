@@ -1,5 +1,35 @@
 const mongoose = require('mongoose');
 
+const enrollmentSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'User reference is required for enrollment'],
+    validate: {
+      validator: function(v) {
+        return mongoose.Types.ObjectId.isValid(v);
+      },
+      message: props => `${props.value} is not a valid user ID!`
+    }
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['unpaid', 'paid', 'refunded'],
+    default: 'unpaid',
+  },
+  paymentReference: {
+    type: String,
+    default: null,
+  },
+  paymentDate: {
+    type: Date,
+    default: null
+  }
+}, { 
+  _id: false,
+  timestamps: true 
+});
+
 const courseSchema = new mongoose.Schema(
   {
     title: {
@@ -29,6 +59,12 @@ const courseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Course must have an instructor'],
+      validate: {
+        validator: function(v) {
+          return mongoose.Types.ObjectId.isValid(v);
+        },
+        message: props => `${props.value} is not a valid instructor ID!`
+      }
     },
     thumbnail: {
       type: String,
@@ -49,24 +85,20 @@ const courseSchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Duration cannot be negative'],
     },
-    studentsEnrolled: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-      },
-    ],
+    studentsEnrolled: {
+      type: [enrollmentSchema],
+      validate: {
+        validator: function(enrollments) {
+          // Check for duplicate user enrollments
+          const userIds = enrollments.map(e => e.user.toString());
+          return new Set(userIds).size === userIds.length;
+        },
+        message: 'A user cannot be enrolled multiple times in the same course'
+      }
+    },
     isPublished: {
       type: Boolean,
       default: false,
-    },
-    paymentStatus: {
-      type: String,
-      enum: ['unpaid', 'paid', 'refunded'],
-      default: 'unpaid',
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
     },
   },
   {
@@ -76,30 +108,74 @@ const courseSchema = new mongoose.Schema(
   }
 );
 
-// ✅ Virtual field to get chapters for this course
+// Virtual populate
 courseSchema.virtual('chapters', {
   ref: 'Chapter',
   foreignField: 'course',
   localField: '_id',
 });
 
-// ✅ Virtual property for enrollment count
 courseSchema.virtual('enrollmentCount').get(function () {
   return this.studentsEnrolled?.length || 0;
 });
 
-// ✅ Pre-save hook
-courseSchema.pre('save', function (next) {
-  if (this.isModified('price') && this.price < 0) {
-    throw new Error('Price cannot be negative');
-  }
-  console.log(`Saving course: ${this.title}`);
-  next();
-});
+// Static method to check if user is enrolled
+courseSchema.statics.isUserEnrolled = async function(courseId, userId) {
+  const course = await this.findOne({
+    _id: courseId,
+    'studentsEnrolled.user': userId
+  });
+  return !!course;
+};
 
-// ✅ Post-save hook
-courseSchema.post('save', function (doc, next) {
-  console.log(`Course ${doc.title} was saved successfully`);
+// Improved enrollment method with proper subdocument updates
+courseSchema.methods.updateEnrollment = async function(userId, status = 'paid', txRef = null, session = null) {
+  try {
+    const enrollment = this.studentsEnrolled.find(
+      enrollment => enrollment.user.toString() === userId.toString()
+    );
+
+    if (!enrollment) {
+      // Add new enrollment
+      this.studentsEnrolled.push({
+        user: userId,
+        paymentStatus: status,
+        paymentReference: txRef,
+        paymentDate: status === 'paid' ? new Date() : null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } else {
+      // Update existing enrollment fields directly
+      enrollment.paymentStatus = status;
+      enrollment.paymentReference = txRef;
+      if (status === 'paid' && !enrollment.paymentDate) {
+        enrollment.paymentDate = new Date();
+      }
+      enrollment.updatedAt = new Date();
+    }
+
+    const options = session ? { session } : {};
+    await this.save(options);
+    return this;
+  } catch (error) {
+    throw new Error(`Failed to update enrollment: ${error.message}`);
+  }
+};
+
+// Pre-save hook to validate enrollments
+courseSchema.pre('save', function(next) {
+  if (this.studentsEnrolled && this.studentsEnrolled.length > 0) {
+    const invalidEnrollments = this.studentsEnrolled.filter(
+      e => !e.user || !mongoose.Types.ObjectId.isValid(e.user)
+    );
+    
+    if (invalidEnrollments.length > 0) {
+      const err = new Error(`Invalid user references in enrollments`);
+      err.name = 'ValidationError';
+      return next(err);
+    }
+  }
   next();
 });
 
